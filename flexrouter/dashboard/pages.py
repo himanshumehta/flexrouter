@@ -1179,7 +1179,7 @@ _INT_SETTINGS = frozenset({
     "sample_interval_seconds", "health_history_days", "key_concurrency_cap",
     "save_conversations_days",
 })
-_FLOAT_SETTINGS = frozenset({"failover_budget_seconds"})
+_FLOAT_SETTINGS = frozenset({"failover_budget_seconds", "needs_you_recheck_minutes"})
 _JSON_SETTINGS = frozenset({"provider_budget", "hooks"})
 _BOOL_SETTINGS = frozenset({
     "auto_add_models", "experimental_model_discovery", "redact_errors",

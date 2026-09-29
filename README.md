@@ -178,7 +178,7 @@ writing Python, you can also call flexrouter directly — see
 
 Your models are grouped into named lists — for example `fast` and `smart`, but you can name them anything, e.g. `cheap`, `smart`, `nuclear`. flexrouter calls each of these a **bucket**, and each model in it has a score from 1–100 (higher means "prefer this one"). On each request:
 
-1. Models that aren't Ready are skipped: Busy ones until their countdown ends, Needs-you ones until you fix them on the **Status** page.
+1. Models that aren't Ready are skipped: Busy ones until their countdown ends, Needs-you ones until you fix them on the **Status** page. A model that ran out of credit or plan quota is tried again on its own every 30 minutes (`needs_you_recheck_minutes`), so your preferred model comes back when the provider tops it up or resets it.
 2. Models that have used up today's spending cap for their provider are skipped.
 3. Models that have hit their per-minute request or token limit are skipped.
 4. Models too small to fit the message are skipped (you'll get a `ContextWindowWarning`).
@@ -230,6 +230,7 @@ settings:
   session_ttl_minutes: 30          # sticky session expiry
 
   failover_budget_seconds: 30      # give up after this long trying other models
+  needs_you_recheck_minutes: 30    # retry models whose credit/quota ran out; 0 = never
 
   provider_budget:                 # optional daily USD cap per provider
     openai: 5.00

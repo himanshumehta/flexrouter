@@ -183,7 +183,7 @@ status, and the Status page shows it with one sentence and at most one button:
 | Ready | nothing wrong | — |
 | Busy | 429 or 5xx: rate limited or overloaded | on its own, at the provider's own retry time (else 60s), never doubling |
 | Struggling | empty replies or other odd failures | on its own after about an hour, or [Try now] |
-| Needs you | wrong model ID, not on your plan, balance empty, key rejected | only when you press its fix; no timer |
+| Needs you | wrong model ID, not on your plan, balance empty, key rejected | when you press its fix; balance empty and not on plan are also tried again every 30 minutes (`needs_you_recheck_minutes`, 0 = never) |
 | Off | you turned it off | [Turn on] |
 
 A 404 is checked against the provider's real model list: if there's a close

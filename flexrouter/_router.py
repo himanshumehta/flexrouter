@@ -123,7 +123,9 @@ class LocalRouter:
         # box, quarantine, and the 7-day auto-bench (which is gone: a model
         # that gives empty replies is Struggling for about an hour, and
         # provider overload is only ever Busy).
-        self._status = StatusStore(self._cfg.state_dir, on_event=self._events.record)
+        self._status = StatusStore(
+            self._cfg.state_dir, on_event=self._events.record,
+            recheck_seconds=lambda: self._cfg.needs_you_recheck_minutes * 60)
         self._engine = RoutingEngine(
             self._cfg, rate_limit_store=self._rate_limit_store, status=self._status,
             quota_tracker=self._quota_tracker)
@@ -190,6 +192,10 @@ class LocalRouter:
         if len(lines) > len(shown):
             shown.append(f"...and {len(lines) - len(shown)} more")
         joined = ("\n  ").join(shown)
+        if any(self._status.get(m.provider, m.model).until is not None for m in models):
+            return (f"Every model in bucket {tier!r} needs you. Used-up ones are "
+                    f"tried again every {self._cfg.needs_you_recheck_minutes:g} "
+                    f"minutes:\n  {joined}")
         return (f"Every model in bucket {tier!r} needs you - this will "
                 f"not clear on its own:\n  {joined}")
 

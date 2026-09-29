@@ -683,6 +683,7 @@ _SETTINGS_ATTR = {
     "window_seconds": "window_seconds",
     "session_ttl_minutes": "session_ttl_minutes",
     "failover_budget_seconds": "failover_budget_seconds",
+    "needs_you_recheck_minutes": "needs_you_recheck_minutes",
     "sample_interval_seconds": "sample_interval_seconds",
     "health_history_days": "health_history_days",
     "key_concurrency_cap": "key_concurrency_cap",
