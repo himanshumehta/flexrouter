@@ -4,6 +4,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A model marked Needs you because its credit ran out (402) or its plan quota
+  is used up is tried again every 30 minutes, so the preferred (highest-score)
+  model comes back on its own. Set `needs_you_recheck_minutes` (settings or
+  the dashboard's Failover section); 0 turns it off. A rejected key or a
+  model that doesn't exist still waits for you.
+
 ### Security
 
 - The dashboard and `/api` now refuse requests another website sends from

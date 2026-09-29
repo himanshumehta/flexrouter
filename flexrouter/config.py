@@ -147,6 +147,10 @@ class FlexConfig:
     # can reach, not a fixed count, but gives up rather than running forever
     # against a bucket that keeps rotating through models that all fail.
     failover_budget_seconds: float = 30.0
+    # A model marked Needs you because its credit or plan quota ran out is
+    # tried again after this long, so a preferred model comes back on its
+    # own once the provider tops it up or resets it. 0 turns this off.
+    needs_you_recheck_minutes: float = 30.0
     port: int | None = None          # None means "left at the default"
     dashboard_port: int | None = None  # deprecated alias for `port`
     sample_interval_seconds: int = 60
@@ -580,6 +584,7 @@ def load_config(path: Path | str | None = None) -> FlexConfig:
         window_seconds=_number(settings, "window_seconds", 60, int),
         session_ttl_minutes=_number(settings, "session_ttl_minutes", 30, int),
         failover_budget_seconds=_number(settings, "failover_budget_seconds", 30.0, float),
+        needs_you_recheck_minutes=_number(settings, "needs_you_recheck_minutes", 30.0, float),
         port=port,
         dashboard_port=port,
         sample_interval_seconds=_number(settings, "sample_interval_seconds", 60, int),

@@ -130,6 +130,7 @@ buckets:
 settings:
   port: 4891
   failover_budget_seconds: 30
+  needs_you_recheck_minutes: 30   # retry used-up models every 30 min; 0 = never
   hooks:
     - detect_vision        # route image messages only to vision: true models
     - estimate_tokens      # skip models whose context_window is too small
@@ -230,6 +231,7 @@ generate an app password on the dashboard's Settings page, or set
 |---|---|
 | `flexrouter isn't running` | Start `flexrouter serve`. |
 | `There is no bucket named 'x'` | Use a name from `GET /v1/models`, or add the bucket to `config.yaml`. |
+| A preferred model ran out of credit or quota | Nothing to do: it is tried again every `needs_you_recheck_minutes` (30) and used again as soon as it answers. |
 | A model is "Needs you" / 401 | The key was rejected. Re-add it with `flexrouter keys add <provider>`, then press Retry on the dashboard's Status page. |
 | 503 "busy for longer than the failover budget" | Every model in the bucket is rate-limited. Add models or keys, or raise `failover_budget_seconds`. |
 | Long prompts fail on small models | Add the `estimate_tokens` hook (step 5). |

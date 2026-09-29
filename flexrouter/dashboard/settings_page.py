@@ -32,6 +32,9 @@ META: dict[str, tuple[str, str, str, str, bool]] = {
     "failover_budget_seconds": ("Failover", "Give up after", "seconds",
                                 "How long a request keeps trying other models in its bucket "
                                 "before it gives up.", False),
+    "needs_you_recheck_minutes": ("Failover", "Recheck used-up models every", "minutes",
+                                  "A model whose credit or plan quota ran out is tried again "
+                                  "after this long. 0 turns it off.", False),
     "probe_timeout_seconds": ("Failover", "Health check timeout", "seconds",
                               "How long a check on whether a provider is back may take.", False),
     "key_concurrency_cap": ("Failover", "Requests at once per key", "",

@@ -8,7 +8,9 @@ auto-bench, and the "no speed data" skip. A model is now exactly one of:
     busy        rate limit or overload; clears on its own (provider's
                 retry-after, else 60s, never doubling)
     struggling  fails in weird ways (empty replies, bad output); ~1 hour
-    needs_you   wrong ID / not on plan / no balance / key rejected; no timer
+    needs_you   wrong ID / not on plan / no balance / key rejected; no timer,
+                except a used-up credit or plan quota, which is tried again
+                after `recheck_seconds` (RECHECK_KINDS)
     off         turned off by the owner (reported by the facts layer: a
                 disabled model is dropped from the live config entirely)
 
@@ -40,6 +42,12 @@ OFF = "off"
 STATUSES = (READY, BUSY, STRUGGLING, NEEDS_YOU, OFF)
 
 BUSY_DEFAULT_SECONDS = 60
+
+# Needs-you kinds that can fix themselves on the provider's side: a balance
+# topped up, a plan quota that resets. They are tried again after the
+# store's recheck interval instead of waiting for the owner to press Retry.
+# A rejected key or a model that doesn't exist never fixes itself.
+RECHECK_KINDS = frozenset({"balance_empty", "not_on_plan"})
 STRUGGLING_SECONDS = 60 * 60
 
 # Model slot for a provider-wide status. No real model id is "*".
@@ -230,8 +238,11 @@ class StatusStore:
     """
 
     def __init__(self, state_dir: Optional[str] = None,
-                 on_event: Optional[Callable[[str, str, str, int], None]] = None) -> None:
+                 on_event: Optional[Callable[[str, str, str, int], None]] = None,
+                 recheck_seconds: Optional[Callable[[], float]] = None) -> None:
         self._on_event = on_event
+        # A callable, so a settings reload takes effect without a new store.
+        self._recheck_seconds = recheck_seconds
         self._dir = Path(state_dir) if state_dir else None
         self._path = self._dir / "status.json" if self._dir else None
         self._entries: dict[str, Status] = {}
@@ -403,8 +414,13 @@ class StatusStore:
                       action: Optional[str], status_code: Optional[int] = None,
                       detail: str = "", now: Optional[float] = None) -> None:
         now = time.time() if now is None else now
+        until = None
+        if kind in RECHECK_KINDS and self._recheck_seconds is not None:
+            secs = self._recheck_seconds()
+            if secs and secs > 0:
+                until = now + secs
         self._set(provider, model, Status(
-            NEEDS_YOU, reason, None, action, kind, now, status_code, detail), "needs_you")
+            NEEDS_YOU, reason, until, action, kind, now, status_code, detail), "needs_you")
 
     def set_provider_needs_you(self, provider: str, reason: str, *, kind: str = "bad_key",
                                action: Optional[str] = REPLACE_KEY,

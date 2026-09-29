@@ -22,7 +22,7 @@ SECTIONS = ("settings", "providers", "models")
 ALLOWED_FIELDS: dict[str, frozenset[str]] = {
     "settings": frozenset({
         "port", "dashboard_port", "state_dir", "window_seconds",
-        "session_ttl_minutes", "failover_budget_seconds",
+        "session_ttl_minutes", "failover_budget_seconds", "needs_you_recheck_minutes",
         "sample_interval_seconds", "health_history_days", "key_concurrency_cap",
         "provider_budget", "hooks",
         "decider_base_url", "decider_model", "decider_timeout_seconds",
