@@ -266,7 +266,9 @@ class RoutingEngine:
             # measured) instead of being skipped forever.
             median_ms = self._speed.median_ms(m.provider, m.model)
             if median_ms is not None:
-                return 1000.0 / median_ms
+                # A reply measured at 0 ms (a local or cached upstream,
+                # rounded down) counts as 1 ms instead of dividing by zero.
+                return 1000.0 / max(median_ms, 1.0)
             if m.tokens_per_second is not None:
                 return m.tokens_per_second
             return unmeasured

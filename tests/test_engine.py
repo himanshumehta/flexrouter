@@ -310,3 +310,13 @@ def test_an_unknown_limit_is_not_enforced():
     assert w.available(None, None)
     assert w.seconds_until_available(None, None) == 0.0
     assert not w.available(10, None)
+
+
+def test_a_model_measured_at_zero_ms_does_not_divide_by_zero():
+    # A non-stream reply faster than 1 ms is recorded as 0 ms. Ranking or
+    # explaining the bucket used to raise ZeroDivisionError, which turned a
+    # plain "bucket is busy" answer into a server error.
+    engine = make_engine(bucket_strategy={"low": "fastest"})
+    engine._speed.record("groq", "llama-8b", 0.0)
+    assert engine.select("low", estimated_tokens=0, vision=False) is not None
+    assert engine.explain_unavailable("low")

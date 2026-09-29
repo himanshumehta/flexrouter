@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/notnotnotnoone/flexrouter.git
+git clone https://github.com/himanshumehta/flexrouter.git
 cd flexrouter
 pip install -e ".[dev]"
 ```

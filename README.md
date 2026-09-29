@@ -2,7 +2,7 @@
 
 <img src="docs/assets/banner.svg" alt="flexrouter — stack every provider's free tier behind one address" width="100%">
 
-[![Tests](https://github.com/notnotnotnoone/flexrouter/actions/workflows/test.yml/badge.svg)](https://github.com/notnotnotnoone/flexrouter/actions/workflows/test.yml)
+[![Tests](https://github.com/himanshumehta/flexrouter/actions/workflows/test.yml/badge.svg)](https://github.com/himanshumehta/flexrouter/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
@@ -110,7 +110,7 @@ Two ways to stretch it further:
 Not on PyPI yet — install from GitHub for now:
 
 ```bash
-pip install git+https://github.com/notnotnotnoone/flexrouter.git
+pip install git+https://github.com/himanshumehta/flexrouter.git
 ```
 
 Requires Python 3.11+.
@@ -439,6 +439,6 @@ Inspired by [modelrelay](https://github.com/ellipticmarketing/modelrelay).
 
 <div align="center">
 
-[MIT License](LICENSE) · [Report a bug](https://github.com/notnotnotnoone/flexrouter/issues/new?template=bug_report.md) · [Request a feature](https://github.com/notnotnotnoone/flexrouter/issues/new?template=feature_request.md)
+[MIT License](LICENSE) · [Report a bug](https://github.com/himanshumehta/flexrouter/issues/new?template=bug_report.md) · [Request a feature](https://github.com/himanshumehta/flexrouter/issues/new?template=feature_request.md)
 
 </div>

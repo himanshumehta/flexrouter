@@ -4,6 +4,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- The dashboard and `/api` now refuse requests another website sends from
+  your browser (a cross-site `Origin`). Before, any page you visited could
+  read the request log or repoint a provider's `base_url` at itself through
+  `POST /api/config` and collect that provider's key on the next request.
+  `/v1` and `/models` are unchanged.
+
+### Fixed
+
+- `import flexrouter` (and so every command) no longer needs the internet:
+  the tokenizer loads on first use and falls back to ~4 characters per token
+  when it can't be downloaded.
+- A bucket that is busy for longer than the failover budget gives up at
+  once. It used to sleep out the whole wait (up to a full 60s window), then
+  give up without trying anything.
+- A rejected key shows its `401` in `error.flexrouter.attempts[]` instead of
+  a blank status.
+- A model measured at 0 ms no longer crashes ranking with a division by zero.
+- Docs sync workflow runs on `main` (it watched `master`, which this repo
+  doesn't have) and no longer fails on a history shorter than 10 commits.
+
 ## [2.3.0] - 2026-09-27
 
 The honesty and polish release: errors say what really happened, failover
