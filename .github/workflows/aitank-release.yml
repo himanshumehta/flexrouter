@@ -1,0 +1,117 @@
+name: aitank release
+
+# Push a tag like aitank-v0.1.0 to build a universal macOS binary, sign and
+# notarize it, sign the checksums for `aitank update`, publish a GitHub
+# release and update the Homebrew tap. See aitank/docs/RELEASING.md for the
+# secrets this needs.
+on:
+  push:
+    tags: ['aitank-v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: aitank
+    env:
+      TAG: ${{ github.ref_name }}
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+      HAS_NOTARY: ${{ secrets.NOTARY_KEY != '' }}
+      HAS_TAP: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: aitank/go.mod
+          cache-dependency-path: aitank/go.sum
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build universal binary
+        env:
+          PUBKEY: ${{ vars.AITANK_UPDATE_PUBKEY }}
+        run: |
+          VERSION="${TAG#aitank-v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          LDFLAGS="-s -w -X github.com/himanshumehta/flexrouter/aitank/internal/cli.Version=$VERSION -X github.com/himanshumehta/flexrouter/aitank/internal/cli.Commit=${GITHUB_SHA::7} -X github.com/himanshumehta/flexrouter/aitank/internal/cli.Date=$(date -u +%Y-%m-%d) -X github.com/himanshumehta/flexrouter/aitank/internal/update.PublicKey=$PUBKEY"
+          mkdir -p dist
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o dist/aitank-arm64 ./cmd/aitank
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o dist/aitank-amd64 ./cmd/aitank
+          lipo -create -output dist/aitank dist/aitank-arm64 dist/aitank-amd64
+          ./dist/aitank --version
+
+      - name: Sign with Developer ID
+        if: env.HAS_CERT == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          KCPW="$(uuidgen)"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPW" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" --keychain "$KC" dist/aitank
+          codesign --verify --strict --verbose=2 dist/aitank
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Notarize
+        if: env.HAS_NOTARY == 'true'
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent dist/aitank dist/aitank-notarize.zip
+          xcrun notarytool submit dist/aitank-notarize.zip --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+          rm -f "$RUNNER_TEMP/notary.p8" dist/aitank-notarize.zip
+
+      - name: Package and sign checksums
+        env:
+          AITANK_SIGNING_KEY: ${{ secrets.AITANK_SIGNING_KEY }}
+        run: |
+          ARCHIVE="aitank_${VERSION}_darwin_all.tar.gz"
+          tar -C dist -czf "dist/$ARCHIVE" aitank
+          (cd dist && shasum -a 256 "$ARCHIVE" > checksums.txt)
+          if [ -n "$AITANK_SIGNING_KEY" ]; then
+            go run ./tools/relsign sign dist/checksums.txt > dist/checksums.txt.sig
+          else
+            echo "::warning::AITANK_SIGNING_KEY not set; release will not be installable with 'aitank update'"
+          fi
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "SHA256=$(cut -d' ' -f1 dist/checksums.txt)" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="$(awk -v v="## $VERSION" 'index($0,v)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md)"
+          FILES="dist/$ARCHIVE dist/checksums.txt"
+          [ -f dist/checksums.txt.sig ] && FILES="$FILES dist/checksums.txt.sig"
+          gh release create "$TAG" $FILES --title "aitank $VERSION" --notes "${NOTES:-aitank $VERSION}"
+
+      - name: Update Homebrew tap
+        if: env.HAS_TAP == 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/himanshumehta/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Formula"
+          sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHA256@/$SHA256/g" packaging/aitank.rb.tmpl > "$RUNNER_TEMP/tap/Formula/aitank.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "aitank release"
+          git config user.email "actions@users.noreply.github.com"
+          git add Formula/aitank.rb
+          git commit -m "aitank $VERSION"
+          git push

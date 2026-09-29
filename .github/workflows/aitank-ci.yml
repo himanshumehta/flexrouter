@@ -1,0 +1,48 @@
+name: aitank CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['aitank/**', '.github/workflows/aitank-*.yml']
+  pull_request:
+    paths: ['aitank/**', '.github/workflows/aitank-*.yml']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: aitank
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: aitank/go.mod
+          cache-dependency-path: aitank/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race ./...
+      - name: cross-build for macOS
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/aitank
+          GOOS=darwin GOARCH=amd64 go build -o /dev/null ./cmd/aitank
+      - name: smoke test
+        env:
+          AITANK_HOME: ${{ runner.temp }}/aitank-data
+        run: |
+          go build -o aitank-bin ./cmd/aitank
+          ./aitank-bin --version
+          ./aitank-bin
+          ./aitank-bin help providers
+          ./aitank-bin completion zsh > /dev/null
+          ./aitank-bin privacy --json > /dev/null
