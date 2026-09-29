@@ -1,0 +1,197 @@
+"""Settings: plain names in groups, preferences, backup and restore."""
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from flexrouter import overrides as ov
+from flexrouter.app import create_app
+from flexrouter.dashboard import prefs
+
+
+@pytest.fixture
+def client(config_file):
+    with TestClient(create_app(str(config_file))) as c:
+        yield c
+
+
+def test_settings_have_plain_names_and_keep_the_raw_one(client):
+    body = client.get("/settings").text
+    assert "Give up after" in body
+    assert "failover_budget_seconds" in body
+
+
+def test_settings_are_grouped(client):
+    body = client.get("/settings").text
+    for group in ("Server", "Failover", "Error brain", "History", "Conversations"):
+        assert group in body
+
+
+def test_settings_page_says_nothing_retired_by_default(client):
+    body = client.get("/settings").text
+    assert "no longer uses" not in body
+
+
+def test_settings_page_notices_a_retired_name_in_the_settings_file(minimal_config, tmp_path):
+    # The Settings page reads the settings file at the flexrouter home
+    # (like _backup()'s "your settings file" view), so this writes there
+    # rather than to an arbitrary config path.
+    import yaml
+    from fastapi.testclient import TestClient
+    from flexrouter import home
+    from flexrouter.app import create_app
+
+    minimal_config["settings"]["state_dir"] = str(tmp_path / ".flexrouter")
+    minimal_config["settings"]["retries"] = 7
+    home.ensure_home()
+    home.config_path().write_text(yaml.dump(minimal_config), encoding="utf-8")
+    with TestClient(create_app(str(home.config_path()))) as c:
+        body = c.get("/settings").text
+    assert "no longer uses" in body
+    assert "retries" in body
+
+
+def test_the_port_says_it_needs_a_restart(client):
+    body = client.get("/settings").text
+    port_row = body[body.index('id="set-port"'):]
+    assert "restart needed" in port_row[:1500]
+
+
+def test_every_row_is_searchable(client):
+    assert body_count(client.get("/settings").text, "data-search=") >= 20
+
+
+def body_count(body, needle):
+    return body.count(needle)
+
+
+def test_session_10_settings_are_wired_end_to_end(client):
+    client.post("/settings/failover_budget_seconds", data={"value": "45"})
+    client.post("/settings/save_conversations_days", data={"value": "14"})
+    client.post("/settings/show_quickstart", data={"value": "false"})
+    ov = client.get("/settings/backup").json()["overrides"]["settings"]
+    assert ov["failover_budget_seconds"] == 45.0
+    assert ov["save_conversations_days"] == 14
+    assert ov["show_quickstart"] is False
+
+
+def test_retired_setting_names_are_refused_by_the_settings_route(client):
+    r = client.post("/settings/quarantine_seconds", data={"value": "60"},
+                    follow_redirects=False)
+    assert "ok=0" in r.headers["location"]
+
+
+def test_dashboard_preferences_save(client):
+    r = client.post("/settings/dashboard", data={"motion": "off", "refresh_seconds": "30",
+                                                 "default_range": "7d", "timezone": "local"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and "ok=1" in r.headers["location"]
+    assert prefs.load().motion == "off"
+    assert 'data-motion="off"' in client.get("/settings").text
+
+
+def test_bad_preferences_are_refused(client):
+    r = client.post("/settings/dashboard", data={"refresh_seconds": "0"}, follow_redirects=False)
+    assert "ok=0" in r.headers["location"]
+
+
+def test_backup_holds_changes_but_never_keys(client):
+    client.post("/settings/window_seconds", data={"value": "999"})
+    client.post("/settings/keys/aa", data={"secret": "aa-secretvalue1234"})
+    r = client.get("/settings/backup")
+    data = r.json()
+    assert data["overrides"]["settings"]["window_seconds"] == 999
+    assert "aa-secretvalue1234" not in r.text
+    assert "attachment" in r.headers["content-disposition"]
+
+
+def test_restore_round_trips(client):
+    client.post("/settings/window_seconds", data={"value": "999"})
+    backup = client.get("/settings/backup").content
+    client.post("/settings/reset-all")
+    assert ov.load_overrides() == {}
+    r = client.post("/settings/restore", files={"backup": ("b.json", backup, "application/json")},
+                    follow_redirects=False)
+    assert "ok=1" in r.headers["location"]
+    assert ov.load_overrides()["settings"]["window_seconds"] == 999
+
+
+def test_restore_refuses_a_backup_that_would_set_a_forbidden_field(client):
+    evil = json.dumps({"flexrouter_backup": 1, "overrides": {"settings": {"auth_token": "x"}}})
+    r = client.post("/settings/restore", files={"backup": ("b.json", evil, "application/json")},
+                    follow_redirects=False)
+    assert "ok=0" in r.headers["location"]
+    assert "auth_token" not in json.dumps(ov.load_overrides())
+
+
+def test_restore_refuses_a_file_that_is_not_a_backup(client):
+    r = client.post("/settings/restore", files={"backup": ("b.json", b"{}", "application/json")},
+                    follow_redirects=False)
+    assert "ok=0" in r.headers["location"]
+
+
+def test_reset_all_clears_every_dashboard_change(client):
+    client.post("/settings/window_seconds", data={"value": "999"})
+    client.post("/settings/reset-all")
+    assert ov.load_overrides() == {}
+
+
+def test_the_settings_file_view_hides_keys(client, config_file):
+    body = client.get("/settings").text
+    assert "Your settings file" in body
+
+
+def test_settings_offer_the_rescore_button(client):
+    body = client.get("/settings").text
+    assert "Re-score every model with Artificial Analysis" in body
+    assert "/settings/rescore-models" in body
+
+
+def test_rescore_rewrites_scores_from_artificial_analysis(client):
+    import httpx
+    import respx
+
+    from flexrouter.catalogue import AA_MODELS_URL
+    client.post("/settings/keys/aa", data={"secret": "aa-secretvalue1234"})
+    aa = {"data": [{"name": "Llama 3.1 8B Instant",
+                    "evaluations": {"artificial_analysis_intelligence_index": 30}}]}
+    with respx.mock:
+        respx.get(AA_MODELS_URL).mock(return_value=httpx.Response(200, json=aa))
+        r = client.post("/settings/rescore-models", follow_redirects=False)
+    assert r.status_code == 303 and "ok=1" in r.headers["location"]
+    assert ov.load_overrides()["models"]["groq/llama-3.1-8b-instant"]["score"] == 30
+
+
+def test_rescore_without_an_aa_key_reports_instead(client, monkeypatch):
+    monkeypatch.delenv("AA_API_KEY", raising=False)
+    r = client.post("/settings/rescore-models", follow_redirects=False)
+    assert r.status_code == 303 and "ok=0" in r.headers["location"]
+    assert "models" not in ov.load_overrides()
+
+
+def test_rescore_leaves_models_aa_does_not_know_alone(client):
+    import httpx
+    import respx
+
+    from flexrouter.catalogue import AA_MODELS_URL
+    client.post("/settings/keys/aa", data={"secret": "aa-secretvalue1234"})
+    aa = {"data": [{"name": "Some Other Model",
+                    "evaluations": {"artificial_analysis_intelligence_index": 40}}]}
+    with respx.mock:
+        respx.get(AA_MODELS_URL).mock(return_value=httpx.Response(200, json=aa))
+        r = client.post("/settings/rescore-models", follow_redirects=False)
+    assert r.status_code == 303 and "ok=1" in r.headers["location"]
+    assert "models" not in ov.load_overrides()
+
+
+def test_rescore_reports_a_failing_aa_call(client):
+    import httpx
+    import respx
+
+    from flexrouter.catalogue import AA_MODELS_URL
+    client.post("/settings/keys/aa", data={"secret": "aa-secretvalue1234"})
+    with respx.mock:
+        respx.get(AA_MODELS_URL).mock(return_value=httpx.Response(500, text="error"))
+        r = client.post("/settings/rescore-models", follow_redirects=False)
+    assert r.status_code == 303 and "ok=0" in r.headers["location"]
+    assert "models" not in ov.load_overrides()

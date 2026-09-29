@@ -1,0 +1,398 @@
+from __future__ import annotations
+import random
+import time
+import warnings
+from dataclasses import dataclass
+from typing import Optional
+
+from flexrouter.config import FlexConfig, ModelConfig
+from flexrouter.exceptions import ContextWindowWarning
+from flexrouter.status import READY, StatusStore
+from flexrouter.window import SlidingWindow
+from flexrouter.budget import DailyBudget
+from flexrouter.speed import SpeedTracker
+
+
+
+def _left(limit: Optional[int], used: int) -> Optional[int]:
+    return None if limit is None else max(0, limit - used)
+
+@dataclass
+class RouteResult:
+    provider: str
+    model: str
+    api_key: str
+    base_url: str
+    tier: str
+    header_parser: str = "openai_compatible"
+
+
+class RoutingEngine:
+    def __init__(self, cfg: FlexConfig, rate_limit_store=None, status: Optional[StatusStore] = None,
+                 quota_tracker=None, speed: Optional[SpeedTracker] = None) -> None:
+        self._cfg = cfg
+        self._rate_limit_store = rate_limit_store
+        self._quota_tracker = quota_tracker
+        self._status = status if status is not None else StatusStore()
+        self._speed = speed if speed is not None else SpeedTracker()
+        self._budget = DailyBudget(cfg.provider_budget)
+        self._windows: dict[str, SlidingWindow] = {}
+        self._key_counters: dict[str, int] = {}
+        # session_id -> (provider, model, last_used: float)
+        self._sessions: dict[str, tuple[str, str, float]] = {}
+        self._session_ttl = cfg.session_ttl_minutes * 60
+
+        for tier_models in cfg.tiers.values():
+            for m in tier_models:
+                k = f"{m.provider}/{m.model}"
+                if k not in self._windows:
+                    self._windows[k] = SlidingWindow(cfg.window_seconds)
+
+    def update_config(self, cfg: FlexConfig) -> None:
+        """Hot-reload: update config, add new windows, preserve existing state."""
+        self._cfg = cfg
+        self._budget = DailyBudget(cfg.provider_budget)
+        self._session_ttl = cfg.session_ttl_minutes * 60
+        for tier_models in cfg.tiers.values():
+            for m in tier_models:
+                k = f"{m.provider}/{m.model}"
+                if k not in self._windows:
+                    self._windows[k] = SlidingWindow(cfg.window_seconds)
+
+    def select(
+        self,
+        tier: str,
+        estimated_tokens: int,
+        vision: bool,
+        session_id: Optional[str] = None,
+        exclude: frozenset = frozenset(),
+    ) -> Optional[RouteResult]:
+        """`exclude` is "provider/model" names already tried in this request
+        whose failure changed no status (the caller's budget ran out) - so
+        failover moves on instead of picking the same model again."""
+        models = self._cfg.tiers[tier]  # raises KeyError for unknown tier
+        if exclude:
+            models = [m for m in models if f"{m.provider}/{m.model}" not in exclude]
+
+        # Session stickiness
+        if session_id:
+            result = self._try_session(session_id, tier, estimated_tokens, vision)
+            if result and f"{result.provider}/{result.model}" not in exclude:
+                return result
+
+        strategy = self._strategy(tier)
+        candidates = self._score_candidates(models, estimated_tokens, vision, strategy)
+        if not candidates:
+            return None
+
+        result = self._pick(candidates, tier, strategy)
+
+        if session_id:
+            self._sessions[session_id] = (result.provider, result.model, time.monotonic())
+
+        return result
+
+    def record_request(self, provider: str, model: str, tokens: int) -> None:
+        k = f"{provider}/{model}"
+        if k in self._windows:
+            self._windows[k].record(tokens)
+
+    def record_cost(self, provider: str, cost_usd: float) -> None:
+        self._budget.record(provider, cost_usd)
+
+    def record_speed(self, provider: str, model: str, ms_to_first_word: float) -> None:
+        self._speed.record(provider, model, ms_to_first_word)
+
+    def seconds_until_available(self, tier: str) -> float:
+        models = self._cfg.tiers.get(tier, [])
+        min_wait = float("inf")
+        for m in models:
+            st = self._status.get(m.provider, m.model)
+            if st.value != READY:
+                if st.until:
+                    min_wait = min(min_wait, st.until - time.time())
+            elif self._rate_limit_store is not None and self._rate_limit_store.is_exhausted(m.provider, m.model):
+                avail = self._rate_limit_store.available_at(m.provider, m.model)
+                if avail is not None:
+                    min_wait = min(min_wait, avail - time.time())
+            elif self._quota_tracker is not None and m.quotas and not self._quota_tracker.is_available(m.provider, m.model, m.quotas):
+                min_wait = min(min_wait, self._quota_tracker.seconds_until_available(m.provider, m.model, m.quotas))
+            else:
+                w = self._windows.get(f"{m.provider}/{m.model}")
+                if w:
+                    secs = w.seconds_until_available(self._model_rpm(m), self._model_tpm(m))
+                    min_wait = min(min_wait, secs)
+        return max(0.0, min_wait) if min_wait != float("inf") else 0.0
+
+    def health_snapshot(self) -> dict:
+        models: dict[str, dict] = {}
+        providers: dict[str, dict] = {}
+        seen: set[str] = set()
+        for tier_models in self._cfg.tiers.values():
+            for m in tier_models:
+                key = f"{m.provider}/{m.model}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                st = self._status.get(m.provider, m.model)
+                down = st.value != READY
+                w = self._windows.get(key)
+                rpm = w.current_rpm() if w else 0
+                tpm = w.current_tpm() if w else 0
+                models[key] = {
+                    "status": st.value,
+                    "rpm": rpm,
+                    "tpm": tpm,
+                    "until": st.until,
+                    "latency_ewma_ms": None,
+                }
+                pv = providers.setdefault(m.provider, {"models_up": 0, "models_total": 0})
+                pv["models_total"] += 1
+                if not down:
+                    pv["models_up"] += 1
+        return {"models": models, "providers": providers}
+
+    def remaining_capacity(self, tier: str) -> dict[str, dict]:
+        """For every model in `tier` currently in the running for selection — the same
+        top-20%-by-score-among-available pool _pick() would choose from — return
+        {"provider/model": {"rpm_remaining": int, "tpm_remaining": int}}, computed from each
+        model's configured rpm/tpm limit minus its current SlidingWindow usage.
+
+        Read-only: does not record usage, penalize, or otherwise affect routing/selection.
+        Raises KeyError for an unknown tier, same as select(). estimated_tokens=0 is passed to
+        _score_candidates so no model is excluded on context-window grounds — this method
+        answers "how much room is there," not "would a specific prompt fit."
+        """
+        models = self._cfg.tiers[tier]  # raises KeyError for unknown tier
+        strategy = self._strategy(tier)
+        scored = self._score_candidates(models, estimated_tokens=0, vision=False, strategy=strategy)
+        if not scored:
+            return {}
+        best_score = max(score for score, _ in scored)
+        threshold = best_score * 0.8
+        pool = [m for score, m in scored if score >= threshold]
+
+        result: dict[str, dict] = {}
+        for m in pool:
+            key = f"{m.provider}/{m.model}"
+            w = self._windows.get(key)
+            used_rpm = w.current_rpm() if w else 0
+            used_tpm = w.current_tpm() if w else 0
+            result[key] = {
+                # An unknown limit (None) has no remaining figure to rank
+                # by; None says so rather than inventing one.
+                "rpm_remaining": _left(self._model_rpm(m), used_rpm),
+                "tpm_remaining": _left(self._model_tpm(m), used_tpm),
+            }
+        return result
+
+    # --- internals ---
+
+    def _strategy(self, tier: str) -> str:
+        return self._cfg.bucket_strategy.get(tier, "smartest")
+
+    def _try_session(
+        self, session_id: str, tier: str, estimated_tokens: int, vision: bool
+    ) -> Optional[RouteResult]:
+        entry = self._sessions.get(session_id)
+        if not entry:
+            return None
+        provider, model, last_used = entry
+        # Expire stale sessions
+        if time.monotonic() - last_used > self._session_ttl:
+            del self._sessions[session_id]
+            return None
+        # Check pinned model is still available
+        models = self._cfg.tiers.get(tier, [])
+        pinned = next((m for m in models if m.provider == provider and m.model == model), None)
+        if not pinned:
+            return None
+        if not self._model_available(pinned, estimated_tokens, vision, emit_warning=False,
+                                     strategy=self._strategy(tier)):
+            return None  # fall through to normal selection
+        self._sessions[session_id] = (provider, model, time.monotonic())
+        return self._make_result(pinned, tier)
+
+    def _skip_reason(
+        self, m: ModelConfig, estimated_tokens: int, vision: bool, strategy: str = "smartest"
+    ) -> Optional[tuple[str, str]]:
+        """Why this model cannot take the request right now, or None if it can.
+
+        Single source of truth for availability: _score_candidates uses it to
+        filter and explain_unavailable uses it to report, so the dashboard can
+        never disagree with the router about why a model was passed over.
+        Previously these checks were seven bare `continue` statements and the
+        reason was thrown away, which made an empty tier impossible to debug.
+        """
+        if vision and not m.vision:
+            return ("not_vision_capable", "request needs image support")
+        # grill-decisions.md §10: a model whose provider isn't set up can
+        # never be routed to - it is Needs you, not "OK".
+        if m.provider not in self._cfg.providers:
+            return ("needs_you", f"No {m.provider} provider set up.")
+        # §3: one status. Anything but Ready is skipped, with its own reason.
+        # There is no "no speed data" skip any more: an unmeasured model in a
+        # speed-ranked bucket is tried, and measured on that request.
+        st = self._status.get(m.provider, m.model)
+        if st.value != READY:
+            detail = st.reason
+            left = st.seconds_left()
+            if left is not None and st.value == "busy":
+                detail = f"{st.reason} · back in {left}s"
+            return (st.value, detail)
+        if self._rate_limit_store is not None and self._rate_limit_store.is_exhausted(m.provider, m.model):
+            return ("provider_rate_limit", "provider reports no headroom left")
+        if self._quota_tracker is not None and m.quotas and not self._quota_tracker.is_available(m.provider, m.model, m.quotas):
+            return ("quota_exhausted", "request quota for this period is used up")
+        if not self._budget.is_available(m.provider):
+            return ("over_budget", f"provider {m.provider} is over its daily spend cap")
+        if estimated_tokens > 0 and estimated_tokens >= m.context_window:
+            return ("context_too_small",
+                    f"prompt is ~{estimated_tokens} tokens, window is {m.context_window}")
+        w = self._windows.get(f"{m.provider}/{m.model}")
+        if w and not w.available(self._model_rpm(m), self._model_tpm(m)):
+            return ("rpm_tpm_window",
+                    f"local rate window full (rpm {self._model_rpm(m)}, tpm {self._model_tpm(m)})")
+        return None
+
+    def _rank_value(self, m: ModelConfig, strategy: str,
+                    unmeasured: float = 0.0) -> float:
+        if strategy == "fastest":
+            # grill-decisions.md §14: rank by measured time to first word
+            # (lower ms is better, so invert it) once a model has real
+            # samples. The typed tokens_per_second is only a starting guess
+            # for a model with no measurements yet, and a model with
+            # neither ranks with the fastest known, so it gets tried (and
+            # measured) instead of being skipped forever.
+            median_ms = self._speed.median_ms(m.provider, m.model)
+            if median_ms is not None:
+                return 1000.0 / median_ms
+            if m.tokens_per_second is not None:
+                return m.tokens_per_second
+            return unmeasured
+        return m.score
+
+    def _score_candidates(
+        self, models: list[ModelConfig], estimated_tokens: int, vision: bool,
+        strategy: str = "smartest",
+    ) -> list[tuple[float, ModelConfig]]:
+        ctx_skipped = False
+        scored = []
+        unmeasured = self._fastest_unmeasured(models) if strategy == "fastest" else 0.0
+        for m in models:
+            skip = self._skip_reason(m, estimated_tokens, vision, strategy)
+            if skip is not None:
+                if skip[0] == "context_too_small":
+                    ctx_skipped = True
+                continue
+            scored.append((self._rank_value(m, strategy, unmeasured), m))
+
+        if ctx_skipped:
+            warnings.warn(
+                "Some models skipped: estimated token count exceeds their context window.",
+                ContextWindowWarning,
+                stacklevel=4,
+            )
+
+        return scored
+
+    def _fastest_unmeasured(self, models: list[ModelConfig]) -> float:
+        """The tie-break value an unmeasured, unguessed model ranks at in
+        the "fastest" strategy: the fastest known value, so it still gets
+        tried (and measured) instead of being skipped forever."""
+        known = [
+            self._rank_value(m, "fastest") for m in models
+            if self._speed.median_ms(m.provider, m.model) is not None
+            or m.tokens_per_second is not None
+        ]
+        return max(known) if known else 1.0
+
+    def explain_unavailable(
+        self, tier: str, estimated_tokens: int = 0, vision: bool = False
+    ) -> list[dict]:
+        """Per-model account of what a tier can and cannot do right now.
+
+        Re-walks the tier rather than making select() carry bookkeeping it
+        usually discards — this is only worth computing on the failure path,
+        or when the dashboard asks.
+        """
+        strategy = self._strategy(tier)
+        models = self._cfg.tiers.get(tier, [])
+        unmeasured = self._fastest_unmeasured(models)
+        out = []
+        for m in models:
+            skip = self._skip_reason(m, estimated_tokens, vision, strategy)
+            out.append({
+                "provider": m.provider,
+                "model": m.model,
+                "score": m.score,
+                "tokens_per_second": m.tokens_per_second,
+                "fastest_rank": self._rank_value(m, "fastest", unmeasured),
+                "ttft_ms": self._speed.median_ms(m.provider, m.model),
+                "ttft_samples": self._speed.sample_count(m.provider, m.model),
+                "available": skip is None,
+                "reason": skip[0] if skip else None,
+                "detail": skip[1] if skip else "",
+            })
+        return out
+
+    def _pick(self, scored: list[tuple[float, ModelConfig]], tier: str,
+              strategy: str = "smartest") -> RouteResult:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        best = scored[0][0]
+        label = "tokens_per_second" if strategy == "fastest" else "score"
+        assert best > 0, f"Model {label} values must be positive, got {best}"
+        threshold = best * 0.8
+        top = [m for value, m in scored if value >= threshold]
+        chosen = random.choice(top)
+        return self._make_result(chosen, tier)
+
+    def _make_result(self, m: ModelConfig, tier: str) -> RouteResult:
+        provider_cfg = self._cfg.providers[m.provider]
+        if provider_cfg.api_keys:
+            counter = self._key_counters.get(m.provider, 0)
+            api_key = provider_cfg.api_keys[counter % len(provider_cfg.api_keys)]
+            self._key_counters[m.provider] = counter + 1
+        else:
+            api_key = ""  # local providers (Ollama)
+        return RouteResult(
+            provider=m.provider,
+            model=m.model,
+            api_key=api_key,
+            base_url=provider_cfg.base_url,
+            tier=tier,
+            header_parser=provider_cfg.header_parser,
+        )
+
+    def _model_rpm(self, m: ModelConfig) -> Optional[int]:
+        if self._rate_limit_store is not None:
+            return self._rate_limit_store.get_rpm(m.provider, m.model, m.rpm)
+        return m.rpm
+
+    def _model_tpm(self, m: ModelConfig) -> Optional[int]:
+        if self._rate_limit_store is not None:
+            return self._rate_limit_store.get_tpm(m.provider, m.model, m.tpm)
+        return m.tpm
+
+    def _model_available(
+        self, m: ModelConfig, estimated_tokens: int, vision: bool, emit_warning: bool,
+        strategy: str = "smartest",
+    ) -> bool:
+        if vision and not m.vision:
+            return False
+        if m.provider not in self._cfg.providers:
+            return False
+        if not self._status.is_usable(m.provider, m.model):
+            return False
+        if self._rate_limit_store is not None and self._rate_limit_store.is_exhausted(m.provider, m.model):
+            return False
+        if self._quota_tracker is not None and m.quotas and not self._quota_tracker.is_available(m.provider, m.model, m.quotas):
+            return False
+        if not self._budget.is_available(m.provider):
+            return False
+        if estimated_tokens > 0 and estimated_tokens >= m.context_window:
+            return False
+        w = self._windows.get(f"{m.provider}/{m.model}")
+        if w and not w.available(self._model_rpm(m), self._model_tpm(m)):
+            return False
+        return True
