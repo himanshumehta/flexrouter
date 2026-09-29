@@ -26,6 +26,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -162,6 +163,36 @@ def openai_error(message: str, error_type: str = "server_error",
 _UNAUTHORIZED = ("This flexrouter needs a key. Send it as an Authorization "
                  "header: Bearer <your key>. It is the auth_token line in "
                  "your settings.")
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _cross_site(request: Request) -> bool:
+    """Whether a browser sent this request on behalf of some other website.
+
+    The dashboard and /api take no key (ADR 0009), so the only thing standing
+    between them and any page the owner happens to visit was the 127.0.0.1
+    bind - which does not stop the owner's own browser. A page on any site
+    could read the request log, or POST /api/config to point a provider's
+    base_url at itself and collect that provider's key on the next request.
+
+    Browsers put an Origin header on every cross-site fetch and form post. It
+    must be this service's own address: same host and port as the request,
+    and a loopback name, so a DNS-rebound name that resolves to 127.0.0.1
+    does not pass either. Requests with no Origin (curl, scripts, a plain
+    link to the dashboard) are not from another site and go through.
+    """
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    try:
+        parts = urlsplit(origin)
+        hostname = parts.hostname
+    except ValueError:
+        return True
+    return not (hostname in _LOOPBACK_HOSTS
+                and parts.netloc == request.headers.get("host", ""))
 
 
 def _check_token(request: Request):
@@ -910,6 +941,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
             denied = _check_token(request)
             if denied is not None:
                 return denied
+        # Everything outside the app-facing API (/v1 and the bare /models)
+        # is the owner's dashboard: only its own pages may call it from a
+        # browser. /v1 stays open to browser clients on other origins; it has
+        # its own key when the owner sets one.
+        elif (request.url.path != "/models"
+              and not request.url.path.startswith("/v1/")
+              and _cross_site(request)):
+            return JSONResponse(
+                {"error": "The flexrouter dashboard only accepts requests "
+                          "from its own pages."},
+                status_code=403)
         return await call_next(request)
 
     app.add_middleware(

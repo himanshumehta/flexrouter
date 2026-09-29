@@ -437,7 +437,7 @@ class LocalRouter:
                 _write_trace(ok=False)
                 raise _tag_attempts(nothing_left, attempts)
             while True:
-                if not is_pinned and total_waited_seconds >= self._cfg.failover_budget_seconds:
+                if not is_pinned and total_waited_seconds > self._cfg.failover_budget_seconds:
                     _write_trace(ok=False)
                     raise _tag_attempts(RouterBusy(
                         f"Tried every model in bucket {tier!r} for "
@@ -460,7 +460,19 @@ class LocalRouter:
                         raise _tag_attempts(
                             RouterBusy(f"All models in bucket {tier!r} are unavailable"), attempts)
                     secs = self._engine_for(tier).seconds_until_available(tier)
-                    wait_for = max(secs, 1.0)
+                    # Never sleep past the failover budget. A bucket whose
+                    # next opening is further off than the budget has left
+                    # gives up now: it used to sleep the whole wait (a full
+                    # rate window, 60s, whatever the budget) and then give up
+                    # at the top of the loop without trying anything.
+                    remaining = self._cfg.failover_budget_seconds - total_waited_seconds
+                    if secs > remaining or remaining <= 0:
+                        _write_trace(ok=False)
+                        raise _tag_attempts(RouterBusy(
+                            f"Every model in bucket {tier!r} is busy for longer than "
+                            f"the {int(self._cfg.failover_budget_seconds)}s failover "
+                            f"budget allows"), attempts)
+                    wait_for = min(max(secs, 1.0), remaining)
                     await asyncio.sleep(wait_for)
                     pending_wait_ms += int(wait_for * 1000)
                     total_waited_seconds += wait_for
@@ -517,7 +529,7 @@ class LocalRouter:
                         self._model_facts.record_contradicting_failure(
                             route.provider, route.model, "vision", trace_id)
                     attempts.append({"n": attempt + 1, "provider": route.provider,
-                                     "model": route.model, "status": None,
+                                     "model": route.model, "status": 401,
                                      "provider_message": str(exc), "key_id": key_id,
                                      "verdict": verdict.verdict, "waited_ms": waited_ms,
                                      "ms": int((time.monotonic() - start) * 1000)})
@@ -750,7 +762,7 @@ class LocalRouter:
                 _write_trace(ok=False)
                 raise _tag_attempts(nothing_left, attempts)
             while True:
-                if not is_pinned and total_waited_seconds >= self._cfg.failover_budget_seconds:
+                if not is_pinned and total_waited_seconds > self._cfg.failover_budget_seconds:
                     _write_trace(ok=False)
                     raise _tag_attempts(RouterBusy(
                         f"Tried every model in bucket {tier!r} for "
@@ -774,7 +786,19 @@ class LocalRouter:
                         raise _tag_attempts(
                             RouterBusy(f"All models in bucket {tier!r} are unavailable"), attempts)
                     secs = self._engine_for(tier).seconds_until_available(tier)
-                    wait_for = max(secs, 1.0)
+                    # Never sleep past the failover budget. A bucket whose
+                    # next opening is further off than the budget has left
+                    # gives up now: it used to sleep the whole wait (a full
+                    # rate window, 60s, whatever the budget) and then give up
+                    # at the top of the loop without trying anything.
+                    remaining = self._cfg.failover_budget_seconds - total_waited_seconds
+                    if secs > remaining or remaining <= 0:
+                        _write_trace(ok=False)
+                        raise _tag_attempts(RouterBusy(
+                            f"Every model in bucket {tier!r} is busy for longer than "
+                            f"the {int(self._cfg.failover_budget_seconds)}s failover "
+                            f"budget allows"), attempts)
+                    wait_for = min(max(secs, 1.0), remaining)
                     await asyncio.sleep(wait_for)
                     pending_wait_ms += int(wait_for * 1000)
                     total_waited_seconds += wait_for
@@ -879,7 +903,7 @@ class LocalRouter:
                         self._model_facts.record_contradicting_failure(
                             route.provider, route.model, "vision", trace_id)
                     attempts.append({"n": attempt + 1, "provider": route.provider,
-                                     "model": route.model, "status": None,
+                                     "model": route.model, "status": 401,
                                      "provider_message": str(exc), "key_id": key_id,
                                      "verdict": verdict.verdict, "waited_ms": waited_ms,
                                      "ms": int((time.monotonic() - start) * 1000)})

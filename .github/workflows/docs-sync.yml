@@ -1,7 +1,7 @@
 name: Docs sync
 
-# Every 10 commits on master, Claude reads the diffs since the last sync and
-# updates the user docs to match, then commits straight to master.
+# Every 10 commits on main, Claude reads the diffs since the last sync and
+# updates the user docs to match, then commits straight to main.
 #
 # The `docs-synced` tag marks the last commit whose changes are reflected in
 # the docs. Commits this workflow makes start with "docs(auto):" and are not
@@ -12,7 +12,7 @@ name: Docs sync
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       force:
@@ -45,8 +45,9 @@ jobs:
           if git rev-parse -q --verify refs/tags/docs-synced >/dev/null; then
             base=$(git rev-parse docs-synced)
           else
-            # First run: treat the last $EVERY commits as unsynced.
-            base=$(git rev-parse "HEAD~$EVERY")
+            # First run: treat the last $EVERY commits as unsynced, or the
+            # whole history when it is shorter than that.
+            base=$(git rev-parse -q --verify "HEAD~$EVERY" || git rev-list --max-parents=0 HEAD | tail -1)
           fi
           n=$(git rev-list --count --invert-grep --grep='^docs(auto):' "$base..HEAD")
           echo "base=$base" >> "$GITHUB_OUTPUT"
@@ -82,7 +83,7 @@ jobs:
 
       - name: Update the docs
         if: steps.count.outputs.run == 'true'
-        # `sonnet` is Claude Code's alias for the newest Sonnet model.
+        # `haiku` is Claude Code's alias for the newest Haiku model.
         run: |
           claude -p "$PROMPT" \
             --model haiku \
@@ -141,8 +142,8 @@ jobs:
             } > "$RUNNER_TEMP/msg.txt"
             git commit -F "$RUNNER_TEMP/msg.txt"
             git stash --include-untracked  # drop anything else Claude left behind
-            git pull --rebase origin master
-            git push origin HEAD:master
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
 
           # Mark the last commit Claude read, so the count starts over. Commits
