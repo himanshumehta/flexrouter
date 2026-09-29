@@ -1,0 +1,23 @@
+# Homebrew formula for aitank. The release workflow fills in VERSION and
+# SHA256 and pushes it to the tap (himanshumehta/homebrew-tap).
+class Aitank < Formula
+  desc "How much is left on each AI plan, and which account to use next"
+  homepage "https://github.com/himanshumehta/flexrouter/tree/main/aitank"
+  url "https://github.com/himanshumehta/flexrouter/releases/download/aitank-v@VERSION@/aitank_@VERSION@_darwin_all.tar.gz"
+  sha256 "@SHA256@"
+  version "@VERSION@"
+  license "MIT"
+
+  depends_on :macos
+
+  def install
+    bin.install "aitank"
+    generate_completions_from_executable(bin/"aitank", "completion")
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/aitank --version")
+    ENV["AITANK_HOME"] = testpath/"data"
+    assert_match "no accounts tracked", shell_output("#{bin}/aitank")
+  end
+end
