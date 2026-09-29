@@ -115,6 +115,8 @@ pip install git+https://github.com/himanshumehta/flexrouter.git
 
 Requires Python 3.11+.
 
+Step-by-step local setup, written so a coding agent can follow it: [SETUP.md](SETUP.md).
+
 ## Where your settings live
 
 flexrouter keeps one shared settings file per computer, not one per project. That way every project on your machine uses the same list of models and the same saved keys, instead of you having to set it up again for each one.
