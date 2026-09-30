@@ -106,3 +106,30 @@ func Copy(text string) error {
 	}
 	return nil
 }
+
+// FlexrouterRunning checks if flexrouter daemon is running on :4891.
+func FlexrouterRunning() bool {
+	cmd := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+		"--connect-timeout", "1", "http://localhost:4891/api/status")
+	out, err := cmd.Output()
+	return err == nil && string(out) == "200"
+}
+
+// OpenBrowser opens a URL in the default browser.
+func OpenBrowser(url string) error {
+	return exec.Command("open", url).Start()
+}
+
+// ExecFlexrouter replaces the current process with flexrouter serve.
+func ExecFlexrouter() error {
+	path, err := provider.LookPath("flexrouter")
+	if err != nil {
+		// Try uv run flexrouter
+		uvPath, uvErr := provider.LookPath("uv")
+		if uvErr != nil {
+			return fmt.Errorf("flexrouter is not installed; install with: pip install flexrouter")
+		}
+		return syscall.Exec(uvPath, []string{"uv", "run", "flexrouter", "serve"}, os.Environ())
+	}
+	return syscall.Exec(path, []string{"flexrouter", "serve"}, os.Environ())
+}

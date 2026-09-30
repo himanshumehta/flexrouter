@@ -151,7 +151,7 @@ one-line summary from the local cache.`,
 	}
 	add("view", listCmd(a), nextCmd(a), watchCmd(a), refreshCmd(a), promptCmd(a), statusCmd(a))
 	add("acct", initCmd(a), accountsCmd(a), addCmd(a), renameCmd(a), removeCmd(a), pauseCmd(a), resumeCmd(a), billCmd(a), billsCmd(a))
-	add("launch", launchCmd(a, "claude"), launchCmd(a, "codex"), cmdCmd(a), cursorSwitchCmd(a))
+	add("launch", launchCmd(a, "claude"), launchCmd(a, "codex"), flexrouterCmd(a), cmdCmd(a), cursorSwitchCmd(a))
 	add("integ", daemonCmd(a), alertsCmd(a), quietCmd(a), setupCmd(a))
 	add("misc", configCmd(a), exportCmd(a), importCmd(a), resetCmd(a), doctorCmd(a), logCmd(a), privacyCmd(a), updateCmd(a), changelogCmd(a))
 	root.AddCommand(hookCmd(a))

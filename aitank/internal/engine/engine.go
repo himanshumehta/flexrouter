@@ -4,8 +4,11 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -182,6 +185,7 @@ type Row struct {
 	Error     string
 	Forecasts []forecast.Forecast
 	Next      bool // this row is the overall "use next"
+	Active    bool // this row is the current session's account
 	VendorVer string
 }
 
@@ -238,7 +242,77 @@ func BuildView(cfg *config.Config, now time.Time) *View {
 			r.Next = r.Account.ID == v.Rec.Overall.AccountID
 		}
 	}
+	// Mark the active session's account (FR-10.2).
+	markActiveSession(v.Rows)
 	return v
+}
+
+// markActiveSession sets Active=true on the account matching the current
+// session's env vars (CLAUDE_CONFIG_DIR for Claude, CODEX_HOME for Codex).
+func markActiveSession(rows []*Row) {
+	claudeDir := os.Getenv("CLAUDE_CONFIG_DIR")
+	codexHome := os.Getenv("CODEX_HOME")
+	home := os.Getenv("HOME")
+
+	// For Claude, detect identity from CLAUDE_CONFIG_DIR or fall back to default.
+	claudeActiveEmail := detectClaudeIdentity(claudeDir, home)
+
+	for _, r := range rows {
+		switch r.Account.Provider {
+		case "claude":
+			// Match by identity (email) if we found one
+			if claudeActiveEmail != "" && r.Account.Identity == claudeActiveEmail {
+				r.Active = true
+			} else if claudeDir == "" && r.Account.ProfileDir == "" {
+				// No config dir set and no profile = default profile active
+				r.Active = true
+			} else if claudeDir != "" && r.Account.ProfileDir != "" &&
+				filepath.Clean(claudeDir) == filepath.Clean(r.Account.ProfileDir) {
+				r.Active = true
+			}
+		case "codex":
+			if codexHome == "" && r.Account.ProfileDir == "" {
+				r.Active = true
+			} else if codexHome != "" && r.Account.ProfileDir != "" &&
+				filepath.Clean(codexHome) == filepath.Clean(r.Account.ProfileDir) {
+				r.Active = true
+			}
+		}
+	}
+}
+
+// detectClaudeIdentity finds the signed-in email for the current Claude session.
+// If CLAUDE_CONFIG_DIR has a .claude.json, use that. Otherwise fall back to ~/.claude.json.
+func detectClaudeIdentity(configDir, home string) string {
+	// Try the config dir first (works when it's a profile dir)
+	if configDir != "" {
+		if email := readClaudeIdentityFile(filepath.Join(configDir, ".claude.json")); email != "" {
+			return email
+		}
+	}
+	// Fall back to default profile
+	if home != "" {
+		return readClaudeIdentityFile(filepath.Join(home, ".claude.json"))
+	}
+	return ""
+}
+
+// readClaudeIdentityFile reads the signed-in email from a .claude.json file.
+func readClaudeIdentityFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if json.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	if acct, ok := m["oauthAccount"].(map[string]any); ok {
+		if email, ok := acct["emailAddress"].(string); ok {
+			return email
+		}
+	}
+	return ""
 }
 
 // Row returns the row for an account id.

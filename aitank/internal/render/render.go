@@ -287,7 +287,11 @@ func List(w io.Writer, v *engine.View, st Style, compact bool) {
 	c := v.Config.Colors
 	for _, r := range v.Rows {
 		mark := "  "
-		if r.Next {
+		if r.Active && r.Next {
+			mark = st.Green("●") + st.Cyan("▶")
+		} else if r.Active {
+			mark = st.Green("● ")
+		} else if r.Next {
 			mark = st.Cyan("▶ ")
 		}
 		plan := Dash

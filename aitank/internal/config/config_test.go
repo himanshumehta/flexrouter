@@ -63,8 +63,8 @@ func TestAccountLookup(t *testing.T) {
 	if _, err := c.Account("work"); err == nil {
 		t.Fatal("ambiguous nickname should fail")
 	}
-	if a, err := c.Account("codex/work"); err != nil || a.ID != "codex-1" {
-		t.Fatal("provider/nickname lookup failed")
+	if a, err := c.Account("codex work"); err != nil || a.ID != "codex-1" {
+		t.Fatal("provider nickname lookup failed")
 	}
 	if c.NewAccountID("claude") != "claude-2" {
 		t.Fatal("new id")

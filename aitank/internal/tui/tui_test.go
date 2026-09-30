@@ -24,7 +24,7 @@ func TestFrameFitsAndHighlights(t *testing.T) {
 		}}
 		v.Rows = append(v.Rows, &engine.Row{Account: a, Status: model.StatusOK, Reading: r, Left: r.Left(false), Next: i == 0})
 	}
-	v.Rec.Overall = &recommend.Pick{AccountID: "claude-1", Label: "claude/na", Left: 50}
+	v.Rec.Overall = &recommend.Pick{AccountID: "claude-1", Label: "claude na", Left: 50}
 	for _, size := range [][2]int{{80, 24}, {40, 10}, {200, 60}} {
 		f := Frame(v, 7, size[0], size[1], "", render.Style{On: true})
 		lines := strings.Split(f, "\r\n")
@@ -37,7 +37,7 @@ func TestFrameFitsAndHighlights(t *testing.T) {
 				t.Fatalf("%v: line too wide (%d): %q", size, render.Width(l), l)
 			}
 		}
-		if !strings.Contains(f, "claude/nh") {
+		if !strings.Contains(f, "claude nh") {
 			t.Fatalf("%v: selected row scrolled out of view", size)
 		}
 		if !strings.Contains(f, "Refreshed 12s ago") && size[0] >= 80 {

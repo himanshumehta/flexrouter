@@ -145,6 +145,40 @@ on the clipboard with pbcopy.`,
 	return c
 }
 
+func flexrouterCmd(a *app) *cobra.Command {
+	var dashboard bool
+	c := &cobra.Command{
+		Use:   "flexrouter",
+		Short: "Start flexrouter daemon or open dashboard",
+		Long: `Start the flexrouter daemon (flexrouter serve) if not running, or open the
+dashboard in the browser if it is. With --dashboard, always open the browser.`,
+		Example: "  aitank flexrouter\n  aitank flexrouter --dashboard",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st := render.Style{On: render.ColorEnabled(a.errOut, a.noColor)}
+
+			// Check if daemon is running
+			daemonUp := launch.FlexrouterRunning()
+
+			if dashboard || daemonUp {
+				// Open dashboard
+				url := "http://localhost:4891"
+				if err := launch.OpenBrowser(url); err != nil {
+					return fmt.Errorf("could not open browser: %v", err)
+				}
+				fmt.Fprintf(a.errOut, "%s Opened %s\n", st.Dim("→"), url)
+				return nil
+			}
+
+			// Start daemon
+			fmt.Fprintf(a.errOut, "%s Starting flexrouter daemon...\n", st.Dim("→"))
+			return launch.ExecFlexrouter()
+		},
+	}
+	c.Flags().BoolVar(&dashboard, "dashboard", false, "open dashboard in browser (don't start daemon)")
+	return c
+}
+
 func cursorSwitchCmd(a *app) *cobra.Command {
 	var yes bool
 	c := &cobra.Command{

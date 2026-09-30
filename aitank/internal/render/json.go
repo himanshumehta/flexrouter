@@ -48,6 +48,7 @@ type AccountJSON struct {
 	Error      *string             `json:"error"`
 	Forecasts  []forecast.Forecast `json:"forecasts"`
 	UseNext    bool                `json:"use_next"`
+	Active     bool                `json:"active"`
 }
 
 // ListJSON is `aitank list --json` and `aitank --json`.
@@ -72,7 +73,7 @@ func ViewJSON(v *engine.View) ListJSON {
 			ID: r.Account.ID, Provider: r.Account.Provider, Nickname: r.Account.Nickname,
 			Status: r.Status, Paused: r.Account.Paused, LeftPct: r.Left, Stale: r.Stale,
 			Windows: []model.Window{}, Balances: []model.Money{}, Forecasts: []forecast.Forecast{},
-			UseNext: r.Next,
+			UseNext: r.Next, Active: r.Active,
 		}
 		if r.Account.Identity != "" {
 			a.Identity = strp(r.Account.Identity)

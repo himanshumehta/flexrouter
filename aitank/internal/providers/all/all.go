@@ -9,6 +9,7 @@ import (
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/copilot"
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/cursor"
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/deepseek"
+	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/flexrouter"
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/kilo"
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/moonshot"
 	_ "github.com/himanshumehta/flexrouter/aitank/internal/providers/ollama"

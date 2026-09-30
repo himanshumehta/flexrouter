@@ -97,12 +97,12 @@ type Account struct {
 	AddedAt        time.Time         `toml:"added_at"`
 }
 
-// Label is "provider/nickname".
+// Label is "provider nickname" (matches launch command format: aitank claude work).
 func (a *Account) Label() string {
 	if a.Nickname != "" {
-		return a.Provider + "/" + a.Nickname
+		return a.Provider + " " + a.Nickname
 	}
-	return a.Provider + "/" + a.ID
+	return a.Provider + " " + a.ID
 }
 
 // Bill is a manually entered subscription (FR-14.1).

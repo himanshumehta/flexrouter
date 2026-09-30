@@ -234,7 +234,11 @@ func Frame(v *engine.View, sel, width, height int, msg string, st render.Style) 
 	for i, r := range v.Rows {
 		var lines []string
 		mark := "  "
-		if r.Next {
+		if r.Active && r.Next {
+			mark = st.Green("●") + st.Cyan("▶")
+		} else if r.Active {
+			mark = st.Green("● ")
+		} else if r.Next {
 			mark = st.Cyan("▶ ")
 		}
 		plan := r.Account.Plan
