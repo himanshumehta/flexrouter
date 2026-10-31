@@ -614,7 +614,7 @@ NON_CHAT_PATTERNS = ("whisper", "tts", "orpheus", "image", "lyria", "guard",
                      # "does not support chat endpoints" 400s: seedance and
                      # kling are video generators, chroma-v is an image
                      # diffusion model - none of them speak chat completions.
-                     "seedance", "kling", "chroma-v", "veo", "sora-",
+                     "seedance", "chroma-v", "veo", "sora-",
                      "sound-", "music-")
 
 # The subset of NON_CHAT_PATTERNS confident enough to block routing
@@ -628,19 +628,27 @@ NON_CHAT_PATTERNS = ("whisper", "tts", "orpheus", "image", "lyria", "guard",
 _DEFINITELY_NOT_CHAT = (
     "whisper", "tts", "orpheus", "image", "lyria", "native-audio", "-live",
     "embed", "rerank", "ocr", "moderation", "transcribe", "deplot", "translate",
-    "seedance", "kling", "chroma-v", "veo", "sora-", "sound-", "music-",
+    "seedance", "chroma-v", "veo", "sora-", "sound-", "music-",
 )
 _LOCAL_HOST_HINTS = ("localhost", "127.0.0.1", "::1")
 
 
+def _is_kling_video_model(model_id: str) -> bool:
+    """Match the Kling video family without matching ``inkling`` models."""
+    mid = (model_id or "").lower()
+    return mid.startswith("kling") or "/kling" in mid
+
+
 def is_probably_chat_model(model_id: str) -> bool:
     mid = (model_id or "").lower()
-    return not any(p in mid for p in NON_CHAT_PATTERNS)
+    return not (_is_kling_video_model(mid)
+                or any(p in mid for p in NON_CHAT_PATTERNS))
 
 
 def is_definitely_not_a_chat_model(model_id: str) -> bool:
     mid = (model_id or "").lower()
-    return any(p in mid for p in _DEFINITELY_NOT_CHAT)
+    return _is_kling_video_model(mid) or any(
+        p in mid for p in _DEFINITELY_NOT_CHAT)
 
 
 def _has_a_credential(name: str, praw: dict,

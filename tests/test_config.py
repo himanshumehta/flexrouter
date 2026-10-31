@@ -188,6 +188,40 @@ def test_a_model_matching_a_non_chat_pattern_is_left_out_of_its_bucket(
     assert "seedance-2.0" not in models
 
 
+def test_inkling_is_not_mistaken_for_a_kling_video_model(
+        tmp_path, monkeypatch, minimal_config):
+    """The Kling marker must not reject Thinking Machines' Inkling."""
+    cfg = minimal_config
+    cfg["settings"]["state_dir"] = str(tmp_path / ".flexrouter")
+    bucket = next(iter(cfg["tiers"].values()))
+    inkling = dict(bucket[0])
+    inkling["model"] = "thinkingmachines/inkling-small:free"
+    bucket.append(inkling)
+    p = tmp_path / "flexrouter.yaml"
+    p.write_text(yaml.dump(cfg))
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    loaded = load_config(p)
+    models = [m.model for models in loaded.tiers.values() for m in models]
+    assert "thinkingmachines/inkling-small:free" in models
+
+
+def test_kling_video_model_is_still_left_out(
+        tmp_path, monkeypatch, minimal_config):
+    cfg = minimal_config
+    cfg["settings"]["state_dir"] = str(tmp_path / ".flexrouter")
+    bucket = next(iter(cfg["tiers"].values()))
+    kling = dict(bucket[0])
+    kling["model"] = "kwaivgi/kling-v2.1-master"
+    bucket.append(kling)
+    p = tmp_path / "flexrouter.yaml"
+    p.write_text(yaml.dump(cfg))
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    with pytest.warns(UserWarning, match="non-chat name pattern"):
+        loaded = load_config(p)
+    models = [m.model for models in loaded.tiers.values() for m in models]
+    assert "kwaivgi/kling-v2.1-master" not in models
+
+
 def test_a_chat_shaped_model_whose_name_merely_contains_guard_is_kept(
         tmp_path, monkeypatch, minimal_config):
     # Regression: the first version of this filter used the full

@@ -1,0 +1,358 @@
+# Internet-hosted free models only. No Ollama or other local model provider.
+#
+# LLM7 keyless access was verified on 2026-10-06. If the provider later
+# requires authentication, save tokens outside this file with:
+#   flexrouter keys add llm7
+#   flexrouter keys add openrouter
+
+settings:
+  port: 4891
+  hooks: [estimate_tokens, detect_vision]
+  auto_add_models: true
+
+providers:
+  # LLM7 internet-hosted turbo tier. Keyless access currently works; a free
+  # token can be added later if the provider starts enforcing authentication.
+  llm7:
+    base_url: https://api.llm7.io/v1
+
+  # Only :free model IDs and the openrouter/free selector are configured.
+  # Requires a free OpenRouter key; no card is required.
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+
+# `free` contains every general chat model that the live OpenRouter catalog
+# reported with a durable :free ID on 2026-10-06, plus the existing LLM7
+# turbo routes. The openrouter/free selector follows future catalog changes.
+buckets:
+  free:
+    - provider: llm7
+      model: DeepSeek-V4-Flash-0731
+      score: 100
+      rpm: null
+      tpm: null
+      context_window: 400000
+    - provider: llm7
+      model: minimax-m2.7
+      score: 95
+      rpm: null
+      tpm: null
+      context_window: 180000
+    - provider: openrouter
+      model: nvidia/nemotron-3-ultra-550b-a55b:free
+      score: 94
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: thinkingmachines/inkling:free
+      score: 93
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: google/gemma-4-31b-it:free
+      score: 92
+      rpm: null
+      tpm: null
+      context_window: 262144
+      vision: true
+    - provider: openrouter
+      model: google/gemma-4-26b-a4b-it:free
+      score: 91
+      rpm: null
+      tpm: null
+      context_window: 262144
+      vision: true
+    - provider: openrouter
+      model: nvidia/nemotron-3-super-120b-a12b:free
+      score: 90
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: inclusionai/ling-3.0-flash-sante:free
+      score: 88
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: dots-studio/dots-3-note-preview:free
+      score: 86
+      rpm: null
+      tpm: null
+      context_window: 512000
+      vision: true
+    - provider: openrouter
+      model: thinkingmachines/inkling-small:free
+      score: 85
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: cohere/north-mini-code:free
+      score: 84
+      rpm: null
+      tpm: null
+      context_window: 256000
+    - provider: openrouter
+      model: poolside/laguna-s-2.1:free
+      score: 82
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: nvidia/nemotron-3.5-lightning:free
+      score: 80
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+      score: 78
+      rpm: null
+      tpm: null
+      context_window: 256000
+      vision: true
+    - provider: openrouter
+      model: apodex/apodex-1.1-mini:free
+      score: 76
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: poolside/laguna-xs-2.1:free
+      score: 74
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: liquid/lfm-2.5-2.6b:free
+      score: 70
+      rpm: null
+      tpm: null
+      context_window: 65536
+    - provider: llm7
+      model: mistral-Nemo-Instruct-2407
+      score: 68
+      rpm: null
+      tpm: null
+      context_window: 128000
+    - provider: llm7
+      model: codestral-latest
+      score: 65
+      rpm: null
+      tpm: null
+      context_window: 32000
+    - provider: openrouter
+      model: openrouter/free
+      score: 60
+      rpm: null
+      tpm: null
+      context_window: 200000
+      vision: true
+
+  smart:
+    - provider: llm7
+      model: DeepSeek-V4-Flash-0731
+      score: 100
+      rpm: null
+      tpm: null
+      context_window: 400000
+    - provider: llm7
+      model: minimax-m2.7
+      score: 95
+      rpm: null
+      tpm: null
+      context_window: 180000
+    - provider: openrouter
+      model: nvidia/nemotron-3-ultra-550b-a55b:free
+      score: 94
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: thinkingmachines/inkling:free
+      score: 93
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: google/gemma-4-31b-it:free
+      score: 92
+      rpm: null
+      tpm: null
+      context_window: 262144
+      vision: true
+    - provider: openrouter
+      model: openrouter/free
+      score: 80
+      rpm: null
+      tpm: null
+      context_window: 200000
+      vision: true
+
+  fast:
+    - provider: llm7
+      model: codestral-latest
+      score: 95
+      rpm: null
+      tpm: null
+      context_window: 32000
+    - provider: llm7
+      model: mistral-Nemo-Instruct-2407
+      score: 90
+      rpm: null
+      tpm: null
+      context_window: 128000
+    - provider: openrouter
+      model: nvidia/nemotron-3.5-lightning:free
+      score: 88
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: liquid/lfm-2.5-2.6b:free
+      score: 85
+      rpm: null
+      tpm: null
+      context_window: 65536
+    - provider: openrouter
+      model: poolside/laguna-xs-2.1:free
+      score: 82
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: apodex/apodex-1.1-mini:free
+      score: 80
+      rpm: null
+      tpm: null
+      context_window: 262144
+
+  code:
+    - provider: llm7
+      model: DeepSeek-V4-Flash-0731
+      score: 100
+      rpm: null
+      tpm: null
+      context_window: 400000
+    - provider: openrouter
+      model: cohere/north-mini-code:free
+      score: 94
+      rpm: null
+      tpm: null
+      context_window: 256000
+    - provider: openrouter
+      model: poolside/laguna-s-2.1:free
+      score: 92
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: openrouter
+      model: poolside/laguna-xs-2.1:free
+      score: 88
+      rpm: null
+      tpm: null
+      context_window: 262144
+    - provider: llm7
+      model: codestral-latest
+      score: 85
+      rpm: null
+      tpm: null
+      context_window: 32000
+
+  vision:
+    - provider: openrouter
+      model: thinkingmachines/inkling:free
+      score: 95
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: thinkingmachines/inkling-small:free
+      score: 92
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: google/gemma-4-31b-it:free
+      score: 90
+      rpm: null
+      tpm: null
+      context_window: 262144
+      vision: true
+    - provider: openrouter
+      model: google/gemma-4-26b-a4b-it:free
+      score: 88
+      rpm: null
+      tpm: null
+      context_window: 262144
+      vision: true
+    - provider: openrouter
+      model: dots-studio/dots-3-note-preview:free
+      score: 86
+      rpm: null
+      tpm: null
+      context_window: 512000
+      vision: true
+    - provider: openrouter
+      model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+      score: 84
+      rpm: null
+      tpm: null
+      context_window: 256000
+      vision: true
+    - provider: openrouter
+      model: openrouter/free
+      score: 80
+      rpm: null
+      tpm: null
+      context_window: 200000
+      vision: true
+
+  long:
+    - provider: openrouter
+      model: thinkingmachines/inkling:free
+      score: 96
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: thinkingmachines/inkling-small:free
+      score: 94
+      rpm: null
+      tpm: null
+      context_window: 1048576
+      vision: true
+    - provider: openrouter
+      model: nvidia/nemotron-3-ultra-550b-a55b:free
+      score: 92
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: nvidia/nemotron-3.5-lightning:free
+      score: 90
+      rpm: null
+      tpm: null
+      context_window: 1000000
+    - provider: openrouter
+      model: dots-studio/dots-3-note-preview:free
+      score: 85
+      rpm: null
+      tpm: null
+      context_window: 512000
+      vision: true
+    - provider: llm7
+      model: DeepSeek-V4-Flash-0731
+      score: 82
+      rpm: null
+      tpm: null
+      context_window: 400000
